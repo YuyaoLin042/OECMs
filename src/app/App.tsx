@@ -270,7 +270,7 @@ function LogCard({ entry, onSelect, onEdit, onDelete }: {
   );
 }
 
-// ─── Entry Detail Modal (A4 Multi-page Print Optimized) ──────────────────────
+// ─── Entry Detail Modal (Supports Unlimited Page Length PDF Export) ──────────
 
 function EntryDetail({ entry, onClose, onEdit, onDelete }: {
   entry: ObservationEntry;
@@ -303,10 +303,9 @@ function EntryDetail({ entry, onClose, onEdit, onDelete }: {
 
   return (
     <>
-      <div className="fixed inset-0 bg-black/40 backdrop-blur-sm z-50 flex items-center justify-center p-4">
-        {/* 在打印模式下自动移除 max-h 约束，允许无缝向下延伸分页 */}
-        <div className="bg-card border border-border rounded w-full max-w-2xl max-h-[90vh] flex flex-col shadow-xl print:max-h-none print:shadow-none print:border-none print:bg-transparent">
-          {/* 弹窗顶部栏（打印时隐藏） */}
+      <div className="fixed inset-0 bg-black/40 backdrop-blur-sm z-50 flex items-center justify-center p-4 print:p-0 print:bg-white print:static print:block">
+        <div className="bg-card border border-border rounded w-full max-w-2xl max-h-[90vh] flex flex-col shadow-xl print:max-h-none print:shadow-none print:border-none print:w-full print:max-w-none print:static print:block">
+          {/* 操作栏（打印时隐藏） */}
           <div className="shrink-0 bg-card border-b border-border px-5 py-3.5 flex items-center justify-between gap-3 no-print">
             <div className="min-w-0">
               <p className="text-[10px] text-muted-foreground tracking-widest" style={{ fontFamily: "'DM Mono', monospace" }}>{entry.id}</p>
@@ -334,10 +333,10 @@ function EntryDetail({ entry, onClose, onEdit, onDelete }: {
             </div>
           </div>
 
-          {/* 正文区域：移除打印时的纵向滚动限制 */}
-          <div className="overflow-y-auto flex-1 p-6 print:overflow-visible print:p-0">
+          {/* 打印正文区域：彻底解开高度限制 */}
+          <div className="overflow-y-auto flex-1 p-6 print:p-0 print:overflow-visible print:block">
             <div id="printable-record-content" className="bg-white p-6 rounded border border-gray-100 shadow-sm print:p-0 print:border-none print:shadow-none" style={{ fontFamily: "'DM Sans', sans-serif" }}>
-              <div className="mb-5 pb-4 border-b border-border">
+              <div className="mb-5 pb-4 border-b border-border print-row-item">
                 <div className="flex items-center gap-2 mb-1">
                   <div className="w-5 h-5 rounded-sm bg-primary flex items-center justify-center">
                     <Leaf size={10} className="text-primary-foreground" />
@@ -350,7 +349,7 @@ function EntryDetail({ entry, onClose, onEdit, onDelete }: {
 
               {rows.map((row, i) =>
                 row.value ? (
-                  <div key={i} className={`py-3 ${i < rows.length - 1 ? "border-b border-border/40" : ""} print:break-inside-avoid`}>
+                  <div key={i} className={`py-3 ${i < rows.length - 1 ? "border-b border-border/40" : ""} print-row-item`}>
                     <div className="flex gap-2 items-baseline mb-1">
                       <span className="text-[10px] tracking-wide text-muted-foreground uppercase shrink-0" style={{ fontFamily: "'DM Mono', monospace" }}>{row.en}</span>
                       <span className="text-[10px] text-muted-foreground/50">·</span>
