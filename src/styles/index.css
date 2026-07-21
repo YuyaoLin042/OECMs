@@ -2,25 +2,56 @@
 @import './tailwind.css';
 @import './theme.css';
 
-/* ─── 打印/另存为 PDF 专用样式 ─── */
+
+/* ─── A4 打印与 PDF 导出完美适配样式 ─── */
 @media print {
+  /* 1. 隐藏所有无关元素（导航栏、遮罩背景、按钮等） */
   body * {
-    visibility: hidden;
+    visibility: hidden !important;
   }
+
   .no-print {
     display: none !important;
   }
+
+  /* 2. 强制页面为 A4 尺寸，自动分页 */
+  @page {
+    size: A4 portrait;
+    margin: 15mm 15mm 15mm 15mm; /* 页边距 */
+  }
+
+  /* 3. 解除弹窗高度限制，允许纵向自然延伸分页 */
+  html, body {
+    height: auto !important;
+    overflow: visible !important;
+    background: #ffffff !important;
+  }
+
+  /* 4. 打印内容容器适配 */
   #printable-record-content,
   #printable-record-content * {
-    visibility: visible;
+    visibility: visible !important;
   }
+
   #printable-record-content {
-    position: absolute;
-    left: 0;
-    top: 0;
-    width: 100%;
-    padding: 0;
+    position: absolute !important;
+    left: 0 !important;
+    top: 0 !important;
+    width: 100% !important;
+    height: auto !important;
+    max-height: none !important;
+    overflow: visible !important;
+    padding: 0 !important;
+    margin: 0 !important;
     border: none !important;
     box-shadow: none !important;
+    background: #ffffff !important;
+    color: #000000 !important;
+  }
+
+  /* 5. 避免单个数据模块在分页处被切成两半 */
+  #printable-record-content > div {
+    page-break-inside: avoid;
+    break-inside: avoid;
   }
 }
