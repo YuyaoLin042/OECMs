@@ -133,7 +133,7 @@ function formatDate(iso: string) {
 
 function ConfirmDialog({ message, onConfirm, onCancel }: { message: string; onConfirm: () => void; onCancel: () => void }) {
   return (
-    <div className="fixed inset-0 z-[70] bg-black/40 flex items-center justify-center p-4 no-print">
+    <div className="fixed inset-0 z-[70] bg-black/40 flex items-center justify-center p-4">
       <div className="bg-card border border-border rounded p-6 max-w-sm w-full shadow-xl">
         <p className="text-sm text-foreground mb-5 leading-relaxed">{message}</p>
         <div className="flex gap-2 justify-end">
@@ -270,7 +270,7 @@ function LogCard({ entry, onSelect, onEdit, onDelete }: {
   );
 }
 
-// ─── Entry Detail Modal (Supports Unlimited Page Length PDF Export) ──────────
+// ─── Entry Detail Modal ───────────────────────────────────────────────────────
 
 function EntryDetail({ entry, onClose, onEdit, onDelete }: {
   entry: ObservationEntry;
@@ -280,119 +280,209 @@ function EntryDetail({ entry, onClose, onEdit, onDelete }: {
 }) {
   const [confirmDelete, setConfirmDelete] = useState(false);
 
-function handleDownload() {
-  const printWindow = window.open("", "_blank");
-  if (!printWindow) return;
+  // 终极无顶端空白 A4 打印方案
+  function handleDownload() {
+    const printWindow = window.open("", "_blank");
+    if (!printWindow) return;
 
-  const rows = [
-    { label: "时间与地点", en: "TIME & LOCATION", value: [entry.date, entry.time, entry.tidal, entry.weather, entry.location, entry.coordinates].filter(Boolean).join("  ·  ") },
-    { label: "生态对象", en: "ECOLOGICAL OBJECT", value: entry.species || entry.ecologicalProcess || entry.habitat },
-    { label: "观察到的信号", en: "OBSERVED SIGNAL", value: [(entry.signalType || []).join("、"), entry.signalDescription].filter(Boolean).join("\n") },
-    { label: "感知主体", en: "PERCEIVING SUBJECT", value: [entry.subjectName, entry.subjectRole, entry.subjectType].filter(Boolean).join("  ·  ") },
-    { label: "感知方式", en: "METHOD OF PERCEPTION", value: [(entry.perceptionMethods || []).join("、"), entry.perceptionNotes].filter(Boolean).join("\n") },
-    { label: "初步解释", en: "PRELIMINARY INTERPRETATION", value: entry.interpretation },
-    { label: "判断依据", en: "BASIS FOR JUDGMENT", value: [(entry.judgmentBasis || []).join("、"), entry.judgmentNotes].filter(Boolean).join("\n") },
-    { label: "其他解释", en: "ALTERNATIVE INTERPRETATIONS", value: entry.hasAlternatives === "有 Yes" ? entry.alternativeDetails : (entry.hasAlternatives || "") },
-    { label: "验证方式", en: "VERIFICATION METHOD", value: [(entry.verificationMethods || []).join("、"), entry.verificationStatus].filter(Boolean).join("  ·  ") },
-    { label: "信息去向", en: "INFORMATION DISSEMINATION", value: [(entry.disseminationChannels || []).join("、"), entry.disseminationNotes].filter(Boolean).join("\n") },
-    { label: "后续行动", en: "SUBSEQUENT ACTIONS", value: [(entry.actionsTaken || []).join("、"), entry.actionNotes].filter(Boolean).join("\n") },
-    { label: "不确定性", en: "UNCERTAINTIES", value: entry.uncertainties },
-    { label: "知识采纳", en: "KNOWLEDGE ADOPTED", value: entry.knowledgeAdopted },
-    { label: "未被呈现", en: "KNOWLEDGE OMITTED", value: entry.knowledgeOmitted },
+    const rows = [
+      { label: "时间与地点", en: "TIME & LOCATION", value: [entry.date, entry.time, entry.tidal, entry.weather, entry.location, entry.coordinates].filter(Boolean).join("  ·  ") },
+      { label: "生态对象", en: "ECOLOGICAL OBJECT", value: entry.species || entry.ecologicalProcess || entry.habitat },
+      { label: "观察到的信号", en: "OBSERVED SIGNAL", value: [(entry.signalType || []).join("、"), entry.signalDescription].filter(Boolean).join("\n") },
+      { label: "感知主体", en: "PERCEIVING SUBJECT", value: [entry.subjectName, entry.subjectRole, entry.subjectType].filter(Boolean).join("  ·  ") },
+      { label: "感知方式", en: "METHOD OF PERCEPTION", value: [(entry.perceptionMethods || []).join("、"), entry.perceptionNotes].filter(Boolean).join("\n") },
+      { label: "初步解释", en: "PRELIMINARY INTERPRETATION", value: entry.interpretation },
+      { label: "判断依据", en: "BASIS FOR JUDGMENT", value: [(entry.judgmentBasis || []).join("、"), entry.judgmentNotes].filter(Boolean).join("\n") },
+      { label: "其他解释", en: "ALTERNATIVE INTERPRETATIONS", value: entry.hasAlternatives === "有 Yes" ? entry.alternativeDetails : (entry.hasAlternatives || "") },
+      { label: "验证方式", en: "VERIFICATION METHOD", value: [(entry.verificationMethods || []).join("、"), entry.verificationStatus].filter(Boolean).join("  ·  ") },
+      { label: "信息去向", en: "INFORMATION DISSEMINATION", value: [(entry.disseminationChannels || []).join("、"), entry.disseminationNotes].filter(Boolean).join("\n") },
+      { label: "后续行动", en: "SUBSEQUENT ACTIONS", value: [(entry.actionsTaken || []).join("、"), entry.actionNotes].filter(Boolean).join("\n") },
+      { label: "不确定性", en: "UNCERTAINTIES", value: entry.uncertainties },
+      { label: "知识采纳", en: "KNOWLEDGE ADOPTED", value: entry.knowledgeAdopted },
+      { label: "未被呈现", en: "KNOWLEDGE OMITTED", value: entry.knowledgeOmitted },
+    ];
+
+    const rowsHtml = rows
+      .filter(r => r.value)
+      .map(r => `
+        <div class="row-item">
+          <div class="row-label">${r.en} · ${r.label}</div>
+          <div class="row-content">${r.value}</div>
+        </div>
+      `).join("");
+
+    printWindow.document.write(`
+      <!DOCTYPE html>
+      <html>
+        <head>
+          <title>${entry.species || entry.ecologicalProcess || "生态观察记录"}_PDF</title>
+          <style>
+            * { box-sizing: border-box; margin: 0; padding: 0; }
+            body {
+              font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+              padding: 0;
+              margin: 0;
+              color: #1a1a1a;
+              background: #ffffff;
+            }
+            .header {
+              padding-bottom: 12px;
+              margin-bottom: 16px;
+              border-bottom: 2px solid #111111;
+            }
+            .header-tag {
+              font-size: 10px;
+              letter-spacing: 1.5px;
+              color: #666666;
+              font-family: monospace;
+              text-transform: uppercase;
+              margin-bottom: 4px;
+            }
+            .header-title {
+              font-size: 20px;
+              font-weight: bold;
+              color: #111111;
+              margin-bottom: 4px;
+            }
+            .header-meta {
+              font-size: 11px;
+              color: #777777;
+              font-family: monospace;
+            }
+            .row-item {
+              padding: 10px 0;
+              border-bottom: 1px solid #e5e5e5;
+              page-break-inside: avoid;
+              break-inside: avoid;
+            }
+            .row-label {
+              font-size: 10px;
+              font-weight: 600;
+              letter-spacing: 1px;
+              color: #777777;
+              font-family: monospace;
+              text-transform: uppercase;
+              margin-bottom: 4px;
+            }
+            .row-content {
+              font-size: 13px;
+              color: #222222;
+              line-height: 1.6;
+              white-space: pre-line;
+            }
+            @page {
+              size: A4 portrait;
+              margin: 15mm 15mm 15mm 15mm;
+            }
+          </style>
+        </head>
+        <body>
+          <div class="header">
+            <div class="header-tag">生态观察记录 · ECOLOGICAL OBSERVATION LOG</div>
+            <div class="header-title">${entry.species || entry.ecologicalProcess || entry.habitat || "Observation Record"}</div>
+            <div class="header-meta">${entry.id} · ${formatDate(entry.date)} ${entry.time}</div>
+          </div>
+          ${rowsHtml}
+        </body>
+      </html>
+    `);
+
+    printWindow.document.close();
+    printWindow.focus();
+
+    setTimeout(() => {
+      printWindow.print();
+      printWindow.close();
+    }, 200);
+  }
+
+  const rows: { label: string; en: string; value: string }[] = [
+    { label: "时间与地点", en: "Time & Location", value: [entry.date, entry.time, entry.tidal, entry.weather, entry.location, entry.coordinates].filter(Boolean).join("  ·  ") },
+    { label: "生态对象", en: "Ecological Object", value: entry.species || entry.ecologicalProcess || entry.habitat },
+    { label: "观察到的信号", en: "Observed Signal", value: [(entry.signalType || []).join("、"), entry.signalDescription].filter(Boolean).join("\n") },
+    { label: "感知主体", en: "Perceiving Subject", value: [entry.subjectName, entry.subjectRole, entry.subjectType].filter(Boolean).join("  ·  ") },
+    { label: "感知方式", en: "Method of Perception", value: [(entry.perceptionMethods || []).join("、"), entry.perceptionNotes].filter(Boolean).join("\n") },
+    { label: "初步解释", en: "Preliminary Interpretation", value: entry.interpretation },
+    { label: "判断依据", en: "Basis for Judgment", value: [(entry.judgmentBasis || []).join("、"), entry.judgmentNotes].filter(Boolean).join("\n") },
+    { label: "其他解释", en: "Alternative Interpretations", value: entry.hasAlternatives === "有 Yes" ? entry.alternativeDetails : (entry.hasAlternatives || "") },
+    { label: "验证方式", en: "Verification Method", value: [(entry.verificationMethods || []).join("、"), entry.verificationStatus].filter(Boolean).join("  ·  ") },
+    { label: "信息去向", en: "Information Dissemination", value: [(entry.disseminationChannels || []).join("、"), entry.disseminationNotes].filter(Boolean).join("\n") },
+    { label: "后续行动", en: "Subsequent Actions", value: [(entry.actionsTaken || []).join("、"), entry.actionNotes].filter(Boolean).join("\n") },
+    { label: "不确定性", en: "Uncertainties", value: entry.uncertainties },
+    { label: "知识采纳", en: "Knowledge Adopted", value: entry.knowledgeAdopted },
+    { label: "未被呈现", en: "Knowledge Omitted", value: entry.knowledgeOmitted },
   ];
 
-  const rowsHtml = rows
-    .filter(r => r.value)
-    .map(r => `
-      <div class="row-item">
-        <div class="row-label">${r.en} · ${r.label}</div>
-        <div class="row-content">${r.value}</div>
-      </div>
-    `).join("");
+  return (
+    <>
+      <div className="fixed inset-0 bg-black/40 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+        <div className="bg-card border border-border rounded w-full max-w-2xl max-h-[90vh] flex flex-col shadow-xl">
+          <div className="shrink-0 bg-card border-b border-border px-5 py-3.5 flex items-center justify-between gap-3">
+            <div className="min-w-0">
+              <p className="text-[10px] text-muted-foreground tracking-widest" style={{ fontFamily: "'DM Mono', monospace" }}>{entry.id}</p>
+              <h2 className="text-base truncate" style={{ fontFamily: "'Lora', serif" }}>{entry.species || entry.ecologicalProcess || "Observation Record"}</h2>
+            </div>
+            <div className="flex items-center gap-1 shrink-0">
+              <button onClick={() => { onClose(); onEdit(entry); }}
+                className="flex items-center gap-1.5 text-xs text-muted-foreground hover:text-primary border border-border hover:border-primary/40 px-2.5 py-1.5 rounded transition-all"
+                style={{ fontFamily: "'DM Mono', monospace" }}>
+                <Edit2 size={11} /> 编辑
+              </button>
+              <button onClick={handleDownload}
+                className="flex items-center gap-1.5 text-xs text-emerald-800 bg-emerald-50 hover:bg-emerald-100 border border-emerald-200 px-2.5 py-1.5 rounded transition-all font-medium"
+                style={{ fontFamily: "'DM Mono', monospace" }}>
+                <Download size={11} /> 导出 PDF
+              </button>
+              <button onClick={() => setConfirmDelete(true)}
+                className="flex items-center gap-1.5 text-xs text-muted-foreground hover:text-destructive border border-border hover:border-destructive/40 px-2.5 py-1.5 rounded transition-all"
+                style={{ fontFamily: "'DM Mono', monospace" }}>
+                <Trash2 size={11} /> 删除
+              </button>
+              <button onClick={onClose} className="ml-1 text-muted-foreground hover:text-foreground transition-colors p-1.5 rounded hover:bg-secondary">
+                <X size={15} />
+              </button>
+            </div>
+          </div>
 
-  printWindow.document.write(`
-    <!DOCTYPE html>
-    <html>
-      <head>
-        <title>${entry.species || entry.ecologicalProcess || "生态观察记录"}_PDF</title>
-        <style>
-          * { box-sizing: border-box; margin: 0; padding: 0; }
-          body {
-            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
-            padding: 0;
-            margin: 0;
-            color: #1a1a1a;
-            background: #ffffff;
-          }
-          .header {
-            padding-bottom: 12px;
-            margin-bottom: 16px;
-            border-bottom: 2px solid #111111;
-          }
-          .header-tag {
-            font-size: 10px;
-            letter-spacing: 1.5px;
-            color: #666666;
-            font-family: monospace;
-            text-transform: uppercase;
-            margin-bottom: 4px;
-          }
-          .header-title {
-            font-size: 20px;
-            font-weight: bold;
-            color: #111111;
-            margin-bottom: 4px;
-          }
-          .header-meta {
-            font-size: 11px;
-            color: #777777;
-            font-family: monospace;
-          }
-          .row-item {
-            padding: 10px 0;
-            border-bottom: 1px solid #e5e5e5;
-            page-break-inside: avoid;
-            break-inside: avoid;
-          }
-          .row-label {
-            font-size: 10px;
-            font-weight: 600;
-            letter-spacing: 1px;
-            color: #777777;
-            font-family: monospace;
-            text-transform: uppercase;
-            margin-bottom: 4px;
-          }
-          .row-content {
-            font-size: 13px;
-            color: #222222;
-            line-height: 1.6;
-            white-space: pre-line;
-          }
-          @page {
-            size: A4 portrait;
-            margin: 15mm 15mm 15mm 15mm;
-          }
-        </style>
-      </head>
-      <body>
-        <div class="header">
-          <div class="header-tag">生态观察记录 · ECOLOGICAL OBSERVATION LOG</div>
-          <div class="header-title">${entry.species || entry.ecologicalProcess || entry.habitat || "Observation Record"}</div>
-          <div class="header-meta">${entry.id} · ${formatDate(entry.date)} ${entry.time}</div>
+          <div className="overflow-y-auto flex-1 p-6">
+            <div className="bg-white p-6 rounded border border-gray-100 shadow-sm" style={{ fontFamily: "'DM Sans', sans-serif" }}>
+              <div className="mb-5 pb-4 border-b border-border">
+                <div className="flex items-center gap-2 mb-1">
+                  <div className="w-5 h-5 rounded-sm bg-primary flex items-center justify-center">
+                    <Leaf size={10} className="text-primary-foreground" />
+                  </div>
+                  <span className="text-[10px] text-muted-foreground tracking-widest" style={{ fontFamily: "'DM Mono', monospace" }}>生态观察记录 · ECOLOGICAL OBSERVATION LOG</span>
+                </div>
+                <h1 className="text-xl font-bold text-gray-900" style={{ fontFamily: "'Lora', serif" }}>{entry.species || entry.ecologicalProcess || entry.habitat || "Observation"}</h1>
+                <p className="text-[11px] text-muted-foreground mt-0.5" style={{ fontFamily: "'DM Mono', monospace" }}>{entry.id} · {formatDate(entry.date)} {entry.time}</p>
+              </div>
+
+              {rows.map((row, i) =>
+                row.value ? (
+                  <div key={i} className={`py-3 ${i < rows.length - 1 ? "border-b border-border/40" : ""}`}>
+                    <div className="flex gap-2 items-baseline mb-1">
+                      <span className="text-[10px] tracking-wide text-muted-foreground uppercase shrink-0" style={{ fontFamily: "'DM Mono', monospace" }}>{row.en}</span>
+                      <span className="text-[10px] text-muted-foreground/50">·</span>
+                      <span className="text-[11px] text-muted-foreground">{row.label}</span>
+                    </div>
+                    <p className="text-sm text-foreground leading-relaxed whitespace-pre-line">{row.value}</p>
+                  </div>
+                ) : null
+              )}
+            </div>
+          </div>
         </div>
-        ${rowsHtml}
-      </body>
-    </html>
-  `);
+      </div>
 
-  printWindow.document.close();
-  printWindow.focus();
-
-  setTimeout(() => {
-    printWindow.print();
-    printWindow.close();
-  }, 200);
+      {confirmDelete && (
+        <ConfirmDialog
+          message={`确定要删除记录「${entry.id}」吗？此操作不可撤销。`}
+          onConfirm={() => { onDelete(entry.id); onClose(); }}
+          onCancel={() => setConfirmDelete(false)}
+        />
+      )}
+    </>
+  );
 }
 
 // ─── Observation Form ─────────────────────────────────────────────────────────
@@ -635,7 +725,7 @@ function ObservationForm({ initial, editingId, onSave, onCancel }: {
             </div>
           </div>
 
-          <div className="mt-10 pt-6 border-t border-border flex items-center justify-between no-print">
+          <div className="mt-10 pt-6 border-t border-border flex items-center justify-between">
             <p className="text-xs text-muted-foreground"><span className="text-accent">*</span> Required fields</p>
             <div className="flex items-center gap-2">
               {editingId && (
@@ -709,7 +799,7 @@ export default function App() {
 
   return (
     <div className="min-h-screen bg-background text-foreground" style={{ fontFamily: "'DM Sans', sans-serif" }}>
-      <header className="sticky top-0 z-40 bg-background/95 backdrop-blur-sm border-b border-border no-print">
+      <header className="sticky top-0 z-40 bg-background/95 backdrop-blur-sm border-b border-border">
         <div className="max-w-6xl mx-auto px-4 sm:px-6 h-14 flex items-center justify-between">
           <div className="flex items-center gap-3">
             <div className="w-7 h-7 rounded-sm bg-primary flex items-center justify-center shrink-0">
@@ -738,7 +828,7 @@ export default function App() {
 
       {view === "log" && (
         <div className="max-w-6xl mx-auto px-4 sm:px-6 py-8">
-          <div className="flex items-end justify-between mb-6 no-print">
+          <div className="flex items-end justify-between mb-6">
             <div>
               <h1 className="text-2xl mb-1" style={{ fontFamily: "'Lora', serif" }}>观察记录存档</h1>
               <p className="text-sm text-muted-foreground">{entries.length} 条记录 · 按日期降序</p>
