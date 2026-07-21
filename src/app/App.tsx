@@ -135,18 +135,37 @@ function formatDate(iso: string) {
   return new Date(iso).toLocaleDateString("zh-CN", { year: "numeric", month: "long", day: "numeric" });
 }
 
-// ─── PDF Export (Fixed rendering overflow) ───────────────────────────────────
+// ─── PDF Export (Enhanced CORS & Error Resilience) ───────────────────────────
 
 async function exportPDF(el: HTMLElement, filename: string) {
   try {
-    const canvas = await html2canvas(el, {
+    // 1. 克隆节点并在后台渲染，避免受弹窗样式影响
+    const clone = el.cloneNode(true) as HTMLElement;
+    clone.style.width = "750px";
+    clone.style.padding = "20px";
+    clone.style.position = "absolute";
+    clone.style.left = "-9999px";
+    clone.style.top = "0";
+    clone.style.background = "#ffffff";
+    document.body.appendChild(clone);
+
+    // 2. 渲染 Canvas（允许跨域、忽略无法加载的图片）
+    const canvas = await html2canvas(clone, {
       scale: 2,
       useCORS: true,
+      allowTaint: true,
       backgroundColor: "#ffffff",
       logging: false,
-      windowWidth: 800,
+      ignoreElements: (element) => {
+        // 如果图片加载失败，避免卡死整个导出流程
+        return element.tagName === "IMG" && !(element as HTMLImageElement).complete;
+      }
     });
 
+    // 3. 移除临时克隆节点
+    document.body.removeChild(clone);
+
+    // 4. 生成 PDF 并保存
     const imgData = canvas.toDataURL("image/png");
     const pdf = new jsPDF({ unit: "mm", format: "a4", orientation: "portrait" });
     const pageW = pdf.internal.pageSize.getWidth();
@@ -155,12 +174,11 @@ async function exportPDF(el: HTMLElement, filename: string) {
     const imgH = (canvas.height * imgW) / canvas.width;
 
     let remainingH = imgH;
-    let positionY = 10;
+    let srcY = 0;
 
     if (imgH <= pageH - 20) {
       pdf.addImage(imgData, "PNG", 10, 10, imgW, imgH);
     } else {
-      let srcY = 0;
       while (remainingH > 0) {
         const sliceHeightInPdf = Math.min(remainingH, pageH - 20);
         const sliceHeightInCanvas = (sliceHeightInPdf * canvas.width) / imgW;
@@ -186,8 +204,8 @@ async function exportPDF(el: HTMLElement, filename: string) {
 
     pdf.save(filename);
   } catch (err) {
-    console.error("PDF Export Error: ", err);
-    alert("导出失败，请重试！");
+    console.error("PDF Export Detailed Error: ", err);
+    alert("导出遇到问题，请检查页面图片或刷新重试！");
   }
 }
 
