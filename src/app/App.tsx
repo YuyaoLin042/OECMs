@@ -56,8 +56,6 @@ const SECTIONS = [
   { id: "reflect",  num: "XIII", zh: "你的反思",   en: "Your Reflection",            icon: AlertTriangle },
 ];
 
-// ─── Seed data ────────────────────────────────────────────────────────────────
-
 const SEED_ENTRIES: ObservationEntry[] = [
   {
     id: "OBS-2024-0312-001", createdAt: "2024-03-12T08:47:00",
@@ -133,43 +131,67 @@ function emptyEntry(): Omit<ObservationEntry, "id" | "createdAt"> {
 }
 
 function formatDate(iso: string) {
+  if (!iso) return "";
   return new Date(iso).toLocaleDateString("zh-CN", { year: "numeric", month: "long", day: "numeric" });
 }
 
-// ─── PDF export ───────────────────────────────────────────────────────────────
+// ─── PDF Export (Fixed rendering overflow) ───────────────────────────────────
 
 async function exportPDF(el: HTMLElement, filename: string) {
-  const canvas = await html2canvas(el, {
-    scale: 2,
-    useCORS: true,
-    backgroundColor: "#faf7f1",
-    logging: false,
-  });
-  const imgData = canvas.toDataURL("image/png");
-  const pdf = new jsPDF({ unit: "mm", format: "a4", orientation: "portrait" });
-  const pageW = pdf.internal.pageSize.getWidth();
-  const pageH = pdf.internal.pageSize.getHeight();
-  const imgW = pageW - 20;
-  const imgH = (canvas.height * imgW) / canvas.width;
-  let y = 10;
-  let remaining = imgH;
-  while (remaining > 0) {
-    const sliceH = Math.min(remaining, pageH - 20);
-    const srcY = (imgH - remaining) * (canvas.height / imgH);
-    const srcH = sliceH * (canvas.height / imgH);
-    const sliceCanvas = document.createElement("canvas");
-    sliceCanvas.width = canvas.width;
-    sliceCanvas.height = srcH;
-    const ctx = sliceCanvas.getContext("2d")!;
-    ctx.drawImage(canvas, 0, srcY, canvas.width, srcH, 0, 0, canvas.width, srcH);
-    pdf.addImage(sliceCanvas.toDataURL("image/png"), "PNG", 10, y, imgW, sliceH);
-    remaining -= sliceH;
-    if (remaining > 0) { pdf.addPage(); y = 10; }
+  try {
+    const canvas = await html2canvas(el, {
+      scale: 2,
+      useCORS: true,
+      backgroundColor: "#ffffff",
+      logging: false,
+      windowWidth: 800,
+    });
+
+    const imgData = canvas.toDataURL("image/png");
+    const pdf = new jsPDF({ unit: "mm", format: "a4", orientation: "portrait" });
+    const pageW = pdf.internal.pageSize.getWidth();
+    const pageH = pdf.internal.pageSize.getHeight();
+    const imgW = pageW - 20;
+    const imgH = (canvas.height * imgW) / canvas.width;
+
+    let remainingH = imgH;
+    let positionY = 10;
+
+    if (imgH <= pageH - 20) {
+      pdf.addImage(imgData, "PNG", 10, 10, imgW, imgH);
+    } else {
+      let srcY = 0;
+      while (remainingH > 0) {
+        const sliceHeightInPdf = Math.min(remainingH, pageH - 20);
+        const sliceHeightInCanvas = (sliceHeightInPdf * canvas.width) / imgW;
+
+        const sliceCanvas = document.createElement("canvas");
+        sliceCanvas.width = canvas.width;
+        sliceCanvas.height = sliceHeightInCanvas;
+        const ctx = sliceCanvas.getContext("2d");
+
+        if (ctx) {
+          ctx.drawImage(canvas, 0, srcY, canvas.width, sliceHeightInCanvas, 0, 0, canvas.width, sliceHeightInCanvas);
+          pdf.addImage(sliceCanvas.toDataURL("image/png"), "PNG", 10, 10, imgW, sliceHeightInPdf);
+        }
+
+        srcY += sliceHeightInCanvas;
+        remainingH -= sliceHeightInPdf;
+
+        if (remainingH > 0) {
+          pdf.addPage();
+        }
+      }
+    }
+
+    pdf.save(filename);
+  } catch (err) {
+    console.error("PDF Export Error: ", err);
+    alert("导出失败，请重试！");
   }
-  pdf.save(filename);
 }
 
-// ─── Confirm dialog ───────────────────────────────────────────────────────────
+// ─── Confirm Dialog ───────────────────────────────────────────────────────────
 
 function ConfirmDialog({ message, onConfirm, onCancel }: { message: string; onConfirm: () => void; onCancel: () => void }) {
   return (
@@ -177,7 +199,7 @@ function ConfirmDialog({ message, onConfirm, onCancel }: { message: string; onCo
       <div className="bg-card border border-border rounded p-6 max-w-sm w-full shadow-xl">
         <p className="text-sm text-foreground mb-5 leading-relaxed">{message}</p>
         <div className="flex gap-2 justify-end">
-          <button onClick={onCancel} className="px-4 py-2 rounded border border-border text-sm text-muted-foreground hover:text-foreground hover:border-foreground/30 transition-all">
+          <button onClick={onCancel} className="px-4 py-2 rounded border border-border text-sm text-muted-foreground hover:text-foreground transition-all">
             取消 Cancel
           </button>
           <button onClick={onConfirm} className="px-4 py-2 rounded bg-destructive text-destructive-foreground text-sm hover:opacity-90 transition-opacity">
@@ -217,7 +239,7 @@ function PhotoUploader({ photos, onChange }: { photos: { url: string; caption: s
       {photos.length > 0 && (
         <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
           {photos.map((photo, i) => (
-            <div key={photo.url} className="group relative">
+            <div key={photo.url + i} className="group relative">
               <div className="aspect-[4/3] rounded overflow-hidden bg-muted cursor-zoom-in" onClick={() => setLightbox(photo.url)}>
                 <img src={photo.url} alt={photo.caption || `照片 ${i + 1}`} className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300" />
               </div>
@@ -246,7 +268,7 @@ function PhotoUploader({ photos, onChange }: { photos: { url: string; caption: s
   );
 }
 
-// ─── Shared form primitives ───────────────────────────────────────────────────
+// ─── Shared Form Primitives ───────────────────────────────────────────────────
 
 function SectionHeader({ num, zh, en, icon: Icon }: { num: string; zh: string; en: string; icon: React.ElementType }) {
   return (
@@ -340,13 +362,13 @@ function LogCard({ entry, onSelect, onEdit, onDelete }: {
               <span className="text-[10px] text-muted-foreground" style={{ fontFamily: "'DM Mono', monospace" }}>{formatDate(entry.date)} {entry.time}</span>
             </div>
             <p className="text-sm font-medium text-foreground leading-snug mb-1" style={{ fontFamily: "'Lora', serif" }}>
-              {entry.species || entry.ecologicalProcess || entry.habitat || "—"}
+              {entry.species || entry.ecologicalProcess || entry.habitat || "未知名词"}
             </p>
             <p className="text-xs text-muted-foreground line-clamp-2 leading-relaxed">{entry.signalDescription}</p>
           </div>
           <ChevronRight size={14} className="text-muted-foreground shrink-0 mt-1 group-hover:text-primary transition-colors" />
         </div>
-        {entry.photos.length > 0 && (
+        {entry.photos && entry.photos.length > 0 && (
           <div className="flex gap-1.5 mt-3 overflow-hidden">
             {entry.photos.slice(0, 4).map((p, i) => (
               <div key={i} className="w-11 h-11 rounded overflow-hidden bg-muted shrink-0">
@@ -361,14 +383,13 @@ function LogCard({ entry, onSelect, onEdit, onDelete }: {
           </div>
         )}
         <div className="flex items-center gap-2 mt-3">
-          <span className="text-[10px] bg-secondary text-secondary-foreground px-2 py-0.5 rounded" style={{ fontFamily: "'DM Mono', monospace" }}>{entry.location.split(" ")[0]}</span>
+          <span className="text-[10px] bg-secondary text-secondary-foreground px-2 py-0.5 rounded" style={{ fontFamily: "'DM Mono', monospace" }}>{(entry.location || "未定义方位").split(" ")[0]}</span>
           {entry.subjectName && <span className="text-[10px] text-muted-foreground" style={{ fontFamily: "'DM Mono', monospace" }}>{entry.subjectName} · {entry.subjectRole}</span>}
-          {entry.photos.length > 0 && (
+          {entry.photos && entry.photos.length > 0 && (
             <span className="flex items-center gap-0.5 text-[10px] text-muted-foreground ml-auto" style={{ fontFamily: "'DM Mono', monospace" }}><Camera size={9} />{entry.photos.length}</span>
           )}
         </div>
       </button>
-      {/* Action bar */}
       <div className="border-t border-border/50 px-4 py-2 flex items-center gap-1">
         <button type="button" onClick={() => onEdit(entry)}
           className="flex items-center gap-1.5 text-[11px] text-muted-foreground hover:text-primary px-2 py-1 rounded hover:bg-primary/5 transition-all"
@@ -385,7 +406,7 @@ function LogCard({ entry, onSelect, onEdit, onDelete }: {
   );
 }
 
-// ─── Entry Detail modal ───────────────────────────────────────────────────────
+// ─── Entry Detail Modal ───────────────────────────────────────────────────────
 
 function EntryDetail({ entry, onClose, onEdit, onDelete }: {
   entry: ObservationEntry;
@@ -410,15 +431,15 @@ function EntryDetail({ entry, onClose, onEdit, onDelete }: {
   const rows: { label: string; en: string; value: string }[] = [
     { label: "时间与地点", en: "Time & Location", value: [entry.date, entry.time, entry.tidal, entry.weather, entry.location, entry.coordinates].filter(Boolean).join("  ·  ") },
     { label: "生态对象", en: "Ecological Object", value: entry.species || entry.ecologicalProcess || entry.habitat },
-    { label: "观察到的信号", en: "Observed Signal", value: [entry.signalType.join("、"), entry.signalDescription].filter(Boolean).join("\n") },
+    { label: "观察到的信号", en: "Observed Signal", value: [(entry.signalType || []).join("、"), entry.signalDescription].filter(Boolean).join("\n") },
     { label: "感知主体", en: "Perceiving Subject", value: [entry.subjectName, entry.subjectRole, entry.subjectType].filter(Boolean).join("  ·  ") },
-    { label: "感知方式", en: "Method of Perception", value: [entry.perceptionMethods.join("、"), entry.perceptionNotes].filter(Boolean).join("\n") },
+    { label: "感知方式", en: "Method of Perception", value: [(entry.perceptionMethods || []).join("、"), entry.perceptionNotes].filter(Boolean).join("\n") },
     { label: "初步解释", en: "Preliminary Interpretation", value: entry.interpretation },
-    { label: "判断依据", en: "Basis for Judgment", value: [entry.judgmentBasis.join("、"), entry.judgmentNotes].filter(Boolean).join("\n") },
+    { label: "判断依据", en: "Basis for Judgment", value: [(entry.judgmentBasis || []).join("、"), entry.judgmentNotes].filter(Boolean).join("\n") },
     { label: "其他解释", en: "Alternative Interpretations", value: entry.hasAlternatives === "有 Yes" ? entry.alternativeDetails : (entry.hasAlternatives || "") },
-    { label: "验证方式", en: "Verification Method", value: [entry.verificationMethods.join("、"), entry.verificationStatus].filter(Boolean).join("  ·  ") },
-    { label: "信息去向", en: "Information Dissemination", value: [entry.disseminationChannels.join("、"), entry.disseminationNotes].filter(Boolean).join("\n") },
-    { label: "后续行动", en: "Subsequent Actions", value: [entry.actionsTaken.join("、"), entry.actionNotes].filter(Boolean).join("\n") },
+    { label: "验证方式", en: "Verification Method", value: [(entry.verificationMethods || []).join("、"), entry.verificationStatus].filter(Boolean).join("  ·  ") },
+    { label: "信息去向", en: "Information Dissemination", value: [(entry.disseminationChannels || []).join("、"), entry.disseminationNotes].filter(Boolean).join("\n") },
+    { label: "后续行动", en: "Subsequent Actions", value: [(entry.actionsTaken || []).join("、"), entry.actionNotes].filter(Boolean).join("\n") },
     { label: "不确定性", en: "Uncertainties", value: entry.uncertainties },
     { label: "知识采纳", en: "Knowledge Adopted", value: entry.knowledgeAdopted },
     { label: "未被呈现", en: "Knowledge Omitted", value: entry.knowledgeOmitted },
@@ -426,9 +447,9 @@ function EntryDetail({ entry, onClose, onEdit, onDelete }: {
 
   return (
     <>
-      <div className="fixed inset-0 bg-background/80 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+      <div className="fixed inset-0 bg-black/40 backdrop-blur-sm z-50 flex items-center justify-center p-4">
         <div className="bg-card border border-border rounded w-full max-w-2xl max-h-[90vh] flex flex-col shadow-xl">
-          {/* Sticky header */}
+          {/* Header */}
           <div className="shrink-0 bg-card border-b border-border px-5 py-3.5 flex items-center justify-between gap-3">
             <div className="min-w-0">
               <p className="text-[10px] text-muted-foreground tracking-widest" style={{ fontFamily: "'DM Mono', monospace" }}>{entry.id}</p>
@@ -441,9 +462,9 @@ function EntryDetail({ entry, onClose, onEdit, onDelete }: {
                 <Edit2 size={11} /> 编辑
               </button>
               <button onClick={handleDownload} disabled={exporting}
-                className="flex items-center gap-1.5 text-xs text-muted-foreground hover:text-primary border border-border hover:border-primary/40 px-2.5 py-1.5 rounded transition-all disabled:opacity-50"
+                className="flex items-center gap-1.5 text-xs text-emerald-800 bg-emerald-50 hover:bg-emerald-100 border border-emerald-200 px-2.5 py-1.5 rounded transition-all disabled:opacity-50 font-medium"
                 style={{ fontFamily: "'DM Mono', monospace" }}>
-                <Download size={11} /> {exporting ? "导出中…" : "PDF"}
+                <Download size={11} /> {exporting ? "导出中…" : "导出 PDF"}
               </button>
               <button onClick={() => setConfirmDelete(true)}
                 className="flex items-center gap-1.5 text-xs text-muted-foreground hover:text-destructive border border-border hover:border-destructive/40 px-2.5 py-1.5 rounded transition-all"
@@ -456,10 +477,9 @@ function EntryDetail({ entry, onClose, onEdit, onDelete }: {
             </div>
           </div>
 
-          {/* Scrollable content — also the PDF capture target */}
-          <div className="overflow-y-auto flex-1">
-            <div ref={contentRef} className="p-6 bg-card" style={{ fontFamily: "'DM Sans', sans-serif" }}>
-              {/* PDF header */}
+          {/* Body */}
+          <div className="overflow-y-auto flex-1 p-6">
+            <div ref={contentRef} className="bg-white p-6 rounded border border-gray-100 shadow-sm" style={{ fontFamily: "'DM Sans', sans-serif" }}>
               <div className="mb-5 pb-4 border-b border-border">
                 <div className="flex items-center gap-2 mb-1">
                   <div className="w-5 h-5 rounded-sm bg-primary flex items-center justify-center">
@@ -467,12 +487,11 @@ function EntryDetail({ entry, onClose, onEdit, onDelete }: {
                   </div>
                   <span className="text-[10px] text-muted-foreground tracking-widest" style={{ fontFamily: "'DM Mono', monospace" }}>生态观察记录 · ECOLOGICAL OBSERVATION LOG</span>
                 </div>
-                <h1 className="text-xl" style={{ fontFamily: "'Lora', serif" }}>{entry.species || entry.ecologicalProcess || entry.habitat || "Observation"}</h1>
+                <h1 className="text-xl font-bold text-gray-900" style={{ fontFamily: "'Lora', serif" }}>{entry.species || entry.ecologicalProcess || entry.habitat || "Observation"}</h1>
                 <p className="text-[11px] text-muted-foreground mt-0.5" style={{ fontFamily: "'DM Mono', monospace" }}>{entry.id} · {formatDate(entry.date)} {entry.time}</p>
               </div>
 
-              {/* Photos */}
-              {entry.photos.length > 0 && (
+              {entry.photos && entry.photos.length > 0 && (
                 <div className="mb-5 pb-5 border-b border-border">
                   <p className="text-[10px] tracking-widest uppercase text-muted-foreground mb-3" style={{ fontFamily: "'DM Mono', monospace" }}>现场照片 · Field Photos ({entry.photos.length})</p>
                   <div className="grid grid-cols-3 gap-2">
@@ -488,7 +507,6 @@ function EntryDetail({ entry, onClose, onEdit, onDelete }: {
                 </div>
               )}
 
-              {/* Data rows */}
               {rows.map((row, i) =>
                 row.value ? (
                   <div key={i} className={`py-3 ${i < rows.length - 1 ? "border-b border-border/40" : ""}`}>
@@ -550,13 +568,12 @@ function ObservationForm({ initial, editingId, onSave, onCancel }: {
   function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
     setSubmitted(true);
-    setTimeout(() => { onSave(form); setSubmitted(false); }, 800);
+    setTimeout(() => { onSave(form); setSubmitted(false); }, 600);
   }
 
   return (
     <div className="max-w-6xl mx-auto px-4 sm:px-6 py-8">
       <div className="flex gap-8">
-        {/* Sidebar */}
         <aside className="hidden lg:block w-52 shrink-0">
           <div className="sticky top-20">
             {editingId && (
@@ -581,7 +598,6 @@ function ObservationForm({ initial, editingId, onSave, onCancel }: {
           </div>
         </aside>
 
-        {/* Form */}
         <form onSubmit={handleSubmit} className="flex-1 min-w-0">
           <div className="flex items-start justify-between mb-8">
             <div>
@@ -601,7 +617,6 @@ function ObservationForm({ initial, editingId, onSave, onCancel }: {
             )}
           </div>
 
-          {/* I */}
           <div id="location" ref={(el) => { sectionRefs.current["location"] = el; }} className="scroll-mt-20">
             <SectionHeader num="I" zh="时间与地点" en="Time & Location" icon={MapPin} />
             <div className="grid grid-cols-2 gap-4 mb-4">
@@ -625,7 +640,6 @@ function ObservationForm({ initial, editingId, onSave, onCancel }: {
           </div>
           <SectionDivider />
 
-          {/* II */}
           <div id="ecoobject" ref={(el) => { sectionRefs.current["ecoobject"] = el; }} className="scroll-mt-20">
             <SectionHeader num="II" zh="生态对象" en="Ecological Object" icon={Leaf} />
             <div className="mb-4"><Field label="对象类型 Object Type" required><RadioGroup options={["物种 Species", "生境 Habitat", "生态过程 Process"]} value={form.ecoObjectType} onChange={(v) => set("ecoObjectType", v)} /></Field></div>
@@ -637,7 +651,6 @@ function ObservationForm({ initial, editingId, onSave, onCancel }: {
           </div>
           <SectionDivider />
 
-          {/* III */}
           <div id="signal" ref={(el) => { sectionRefs.current["signal"] = el; }} className="scroll-mt-20">
             <SectionHeader num="III" zh="观察到的信号" en="Observed Signal" icon={Eye} />
             <div className="space-y-4">
@@ -646,13 +659,12 @@ function ObservationForm({ initial, editingId, onSave, onCancel }: {
                 <TextArea value={form.signalDescription} onChange={(v) => set("signalDescription", v)} placeholder="约30只白鹭聚集取食，数量显著高于往常基线…" rows={4} />
               </Field>
               <Field label="现场照片 Field Photos" sublabel="Upload photos as evidence — add a caption to each">
-                <PhotoUploader photos={form.photos} onChange={(v) => set("photos", v)} />
+                <PhotoUploader photos={form.photos || []} onChange={(v) => set("photos", v)} />
               </Field>
             </div>
           </div>
           <SectionDivider />
 
-          {/* IV */}
           <div id="subject" ref={(el) => { sectionRefs.current["subject"] = el; }} className="scroll-mt-20">
             <SectionHeader num="IV" zh="感知主体" en="Perceiving Subject" icon={Telescope} />
             <div className="mb-4"><Field label="主体类型 Subject Type" required><RadioGroup options={SUBJECT_TYPES} value={form.subjectType} onChange={(v) => set("subjectType", v)} /></Field></div>
@@ -663,7 +675,6 @@ function ObservationForm({ initial, editingId, onSave, onCancel }: {
           </div>
           <SectionDivider />
 
-          {/* V */}
           <div id="method" ref={(el) => { sectionRefs.current["method"] = el; }} className="scroll-mt-20">
             <SectionHeader num="V" zh="感知方式" en="Method of Perception" icon={FlaskConical} />
             <div className="space-y-4">
@@ -675,7 +686,6 @@ function ObservationForm({ initial, editingId, onSave, onCancel }: {
           </div>
           <SectionDivider />
 
-          {/* VI */}
           <div id="interp" ref={(el) => { sectionRefs.current["interp"] = el; }} className="scroll-mt-20">
             <SectionHeader num="VI" zh="初步解释" en="Preliminary Interpretation" icon={Lightbulb} />
             <Field label="当事人解释 Interpretation" sublabel="What do you think this signal means?">
@@ -684,7 +694,6 @@ function ObservationForm({ initial, editingId, onSave, onCancel }: {
           </div>
           <SectionDivider />
 
-          {/* VII */}
           <div id="basis" ref={(el) => { sectionRefs.current["basis"] = el; }} className="scroll-mt-20">
             <SectionHeader num="VII" zh="判断依据" en="Basis for Judgment" icon={Brain} />
             <div className="space-y-4">
@@ -696,7 +705,6 @@ function ObservationForm({ initial, editingId, onSave, onCancel }: {
           </div>
           <SectionDivider />
 
-          {/* VIII */}
           <div id="alts" ref={(el) => { sectionRefs.current["alts"] = el; }} className="scroll-mt-20">
             <SectionHeader num="VIII" zh="其他解释" en="Alternative Interpretations" icon={MessageSquare} />
             <div className="space-y-4">
@@ -712,7 +720,6 @@ function ObservationForm({ initial, editingId, onSave, onCancel }: {
           </div>
           <SectionDivider />
 
-          {/* IX */}
           <div id="verify" ref={(el) => { sectionRefs.current["verify"] = el; }} className="scroll-mt-20">
             <SectionHeader num="IX" zh="验证方式" en="Verification Method" icon={CheckCircle} />
             <div className="space-y-4">
@@ -724,7 +731,6 @@ function ObservationForm({ initial, editingId, onSave, onCancel }: {
           </div>
           <SectionDivider />
 
-          {/* X */}
           <div id="dissem" ref={(el) => { sectionRefs.current["dissem"] = el; }} className="scroll-mt-20">
             <SectionHeader num="X" zh="信息去向" en="Information Dissemination" icon={Radio} />
             <div className="space-y-4">
@@ -736,7 +742,6 @@ function ObservationForm({ initial, editingId, onSave, onCancel }: {
           </div>
           <SectionDivider />
 
-          {/* XI */}
           <div id="actions" ref={(el) => { sectionRefs.current["actions"] = el; }} className="scroll-mt-20">
             <SectionHeader num="XI" zh="后续行动" en="Subsequent Actions" icon={Footprints} />
             <div className="space-y-4">
@@ -748,7 +753,6 @@ function ObservationForm({ initial, editingId, onSave, onCancel }: {
           </div>
           <SectionDivider />
 
-          {/* XII */}
           <div id="uncertain" ref={(el) => { sectionRefs.current["uncertain"] = el; }} className="scroll-mt-20">
             <SectionHeader num="XII" zh="不确定性" en="Uncertainties" icon={HelpCircle} />
             <Field label="仍然无法确定的地方 What remains unclear" sublabel="Be honest about the limits of this observation">
@@ -757,7 +761,6 @@ function ObservationForm({ initial, editingId, onSave, onCancel }: {
           </div>
           <SectionDivider />
 
-          {/* XIII */}
           <div id="reflect" ref={(el) => { sectionRefs.current["reflect"] = el; }} className="scroll-mt-20">
             <SectionHeader num="XIII" zh="你的反思" en="Your Reflection" icon={AlertTriangle} />
             <div className="bg-amber-50/60 border border-amber-200/60 rounded p-4 mb-5">
@@ -775,7 +778,6 @@ function ObservationForm({ initial, editingId, onSave, onCancel }: {
             </div>
           </div>
 
-          {/* Submit */}
           <div className="mt-10 pt-6 border-t border-border flex items-center justify-between">
             <p className="text-xs text-muted-foreground"><span className="text-accent">*</span> Required fields</p>
             <div className="flex items-center gap-2">
@@ -805,10 +807,20 @@ function ObservationForm({ initial, editingId, onSave, onCancel }: {
 
 export default function App() {
   const [view, setView] = useState<"form" | "log">("log");
-  const [entries, setEntries] = useState<ObservationEntry[]>(SEED_ENTRIES);
+
+  // LocalStorage 本地数据库挂载
+  const [entries, setEntries] = useState<ObservationEntry[]>(() => {
+    const saved = localStorage.getItem("eco_observation_logs");
+    return saved ? JSON.parse(saved) : SEED_ENTRIES;
+  });
+
   const [selectedEntry, setSelectedEntry] = useState<ObservationEntry | null>(null);
   const [editingEntry, setEditingEntry] = useState<ObservationEntry | null>(null);
   const [deleteConfirmId, setDeleteConfirmId] = useState<string | null>(null);
+
+  useEffect(() => {
+    localStorage.setItem("eco_observation_logs", JSON.stringify(entries));
+  }, [entries]);
 
   function handleEdit(entry: ObservationEntry) {
     setEditingEntry(entry);
@@ -841,7 +853,6 @@ export default function App() {
 
   return (
     <div className="min-h-screen bg-background text-foreground" style={{ fontFamily: "'DM Sans', sans-serif" }}>
-      {/* Header */}
       <header className="sticky top-0 z-40 bg-background/95 backdrop-blur-sm border-b border-border">
         <div className="max-w-6xl mx-auto px-4 sm:px-6 h-14 flex items-center justify-between">
           <div className="flex items-center gap-3">
@@ -869,7 +880,6 @@ export default function App() {
         </div>
       </header>
 
-      {/* Log view */}
       {view === "log" && (
         <div className="max-w-6xl mx-auto px-4 sm:px-6 py-8">
           <div className="flex items-end justify-between mb-6">
@@ -897,7 +907,6 @@ export default function App() {
         </div>
       )}
 
-      {/* Form view */}
       {view === "form" && (
         <ObservationForm
           initial={editingEntry ? { ...editingEntry } : emptyEntry()}
@@ -907,7 +916,6 @@ export default function App() {
         />
       )}
 
-      {/* Detail modal */}
       {selectedEntry && (
         <EntryDetail
           entry={selectedEntry}
@@ -917,7 +925,6 @@ export default function App() {
         />
       )}
 
-      {/* Standalone delete confirm (from card) */}
       {deleteConfirmId && (
         <ConfirmDialog
           message={`确定要删除记录「${deleteConfirmId}」吗？此操作不可撤销。`}
