@@ -135,37 +135,45 @@ function formatDate(iso: string) {
   return new Date(iso).toLocaleDateString("zh-CN", { year: "numeric", month: "long", day: "numeric" });
 }
 
-// ─── PDF Export (Enhanced CORS & Error Resilience) ───────────────────────────
+// ─── PDF Export (Pure Text & Safe Canvas Rendering) ───────────────────────────
 
 async function exportPDF(el: HTMLElement, filename: string) {
   try {
-    // 1. 克隆节点并在后台渲染，避免受弹窗样式影响
+    // 1. 克隆节点并在后台渲染
     const clone = el.cloneNode(true) as HTMLElement;
     clone.style.width = "750px";
-    clone.style.padding = "20px";
+    clone.style.padding = "24px";
     clone.style.position = "absolute";
     clone.style.left = "-9999px";
     clone.style.top = "0";
     clone.style.background = "#ffffff";
+
+    // 2. 移除克隆节点中的所有图片和 Blob，防止 html2canvas 跨域崩溃
+    const images = clone.querySelectorAll("img");
+    images.forEach((img) => {
+      const altText = document.createElement("p");
+      altText.innerText = `[现场照片/附图: ${img.alt || '未命名图片'}]`;
+      altText.style.fontSize = "12px";
+      altText.style.color = "#888888";
+      altText.style.padding = "8px";
+      altText.style.border = "1px dashed #cccccc";
+      img.parentNode?.replaceChild(altText, img);
+    });
+
     document.body.appendChild(clone);
 
-    // 2. 渲染 Canvas（允许跨域、忽略无法加载的图片）
+    // 3. 安全绘制 Canvas
     const canvas = await html2canvas(clone, {
       scale: 2,
       useCORS: true,
-      allowTaint: true,
       backgroundColor: "#ffffff",
       logging: false,
-      ignoreElements: (element) => {
-        // 如果图片加载失败，避免卡死整个导出流程
-        return element.tagName === "IMG" && !(element as HTMLImageElement).complete;
-      }
     });
 
-    // 3. 移除临时克隆节点
+    // 4. 清理克隆 DOM 节点
     document.body.removeChild(clone);
 
-    // 4. 生成 PDF 并保存
+    // 5. 生成 PDF
     const imgData = canvas.toDataURL("image/png");
     const pdf = new jsPDF({ unit: "mm", format: "a4", orientation: "portrait" });
     const pageW = pdf.internal.pageSize.getWidth();
@@ -204,8 +212,8 @@ async function exportPDF(el: HTMLElement, filename: string) {
 
     pdf.save(filename);
   } catch (err) {
-    console.error("PDF Export Detailed Error: ", err);
-    alert("导出遇到问题，请检查页面图片或刷新重试！");
+    console.error("PDF Export Critical Error: ", err);
+    alert("导出遇到严重异常，请检查浏览器设置或刷新后重试！");
   }
 }
 
