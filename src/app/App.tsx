@@ -1,9 +1,9 @@
-import { useState, useRef, useEffect, useCallback } from "react";
+import { useState, useRef, useEffect } from "react";
 import {
   Leaf, MapPin, Eye, Brain, CheckCircle, Send, ChevronRight,
   BookOpen, Plus, X, AlertTriangle, MessageSquare, Lightbulb,
   FlaskConical, Radio, Footprints, HelpCircle, Telescope,
-  Camera, ImagePlus, Pencil, Trash2, Edit2, Download, ArrowLeft,
+  Trash2, Edit2, Download, ArrowLeft,
 } from "lucide-react";
 import jsPDF from "jspdf";
 import html2canvas from "html2canvas";
@@ -27,7 +27,6 @@ interface ObservationEntry {
   actionsTaken: string[]; actionNotes: string;
   uncertainties: string;
   knowledgeAdopted: string; knowledgeOmitted: string;
-  photos: { url: string; caption: string }[];
 }
 
 // ─── Constants ────────────────────────────────────────────────────────────────
@@ -80,7 +79,6 @@ const SEED_ENTRIES: ObservationEntry[] = [
     uncertainties: "无法确定白鹭聚集是否与上游排水直接相关；缺乏该区域水质实时监测数据；渔民的季节性解释尚未量化验证。",
     knowledgeAdopted: "采用了保育员的监测基线数据和经验判断，将其作为异常判断的主要依据。",
     knowledgeOmitted: "渔民的地方性知识（渔汛规律）未被纳入官方记录，仅以「替代解释」附注形式留存，未进入数据库字段。",
-    photos: [],
   },
   {
     id: "OBS-2024-0308-003", createdAt: "2024-03-08T14:22:00",
@@ -105,7 +103,6 @@ const SEED_ENTRIES: ObservationEntry[] = [
     uncertainties: "实际定植成活率未知，胚轴密度高不等于最终种群增长。未测量底质盐度与含水率，这些因素对定植结果影响显著。",
     knowledgeAdopted: "以定量样方数据和文献比较作为主要依据，专业研究框架主导解释。",
     knowledgeOmitted: "未记录社区护林员对该区域历史变化的口述观察，其长期积累的非正式知识未进入本次记录。",
-    photos: [],
   },
 ];
 
@@ -126,7 +123,6 @@ function emptyEntry(): Omit<ObservationEntry, "id" | "createdAt"> {
     disseminationChannels: [], disseminationNotes: "",
     actionsTaken: [], actionNotes: "",
     uncertainties: "", knowledgeAdopted: "", knowledgeOmitted: "",
-    photos: [],
   };
 }
 
@@ -135,45 +131,17 @@ function formatDate(iso: string) {
   return new Date(iso).toLocaleDateString("zh-CN", { year: "numeric", month: "long", day: "numeric" });
 }
 
-// ─── PDF Export (Pure Text & Safe Canvas Rendering) ───────────────────────────
+// ─── Pure Text PDF Export ─────────────────────────────────────────────────────
 
 async function exportPDF(el: HTMLElement, filename: string) {
   try {
-    // 1. 克隆节点并在后台渲染
-    const clone = el.cloneNode(true) as HTMLElement;
-    clone.style.width = "750px";
-    clone.style.padding = "24px";
-    clone.style.position = "absolute";
-    clone.style.left = "-9999px";
-    clone.style.top = "0";
-    clone.style.background = "#ffffff";
-
-    // 2. 移除克隆节点中的所有图片和 Blob，防止 html2canvas 跨域崩溃
-    const images = clone.querySelectorAll("img");
-    images.forEach((img) => {
-      const altText = document.createElement("p");
-      altText.innerText = `[现场照片/附图: ${img.alt || '未命名图片'}]`;
-      altText.style.fontSize = "12px";
-      altText.style.color = "#888888";
-      altText.style.padding = "8px";
-      altText.style.border = "1px dashed #cccccc";
-      img.parentNode?.replaceChild(altText, img);
-    });
-
-    document.body.appendChild(clone);
-
-    // 3. 安全绘制 Canvas
-    const canvas = await html2canvas(clone, {
+    const canvas = await html2canvas(el, {
       scale: 2,
       useCORS: true,
       backgroundColor: "#ffffff",
       logging: false,
     });
 
-    // 4. 清理克隆 DOM 节点
-    document.body.removeChild(clone);
-
-    // 5. 生成 PDF
     const imgData = canvas.toDataURL("image/png");
     const pdf = new jsPDF({ unit: "mm", format: "a4", orientation: "portrait" });
     const pageW = pdf.internal.pageSize.getWidth();
@@ -212,8 +180,8 @@ async function exportPDF(el: HTMLElement, filename: string) {
 
     pdf.save(filename);
   } catch (err) {
-    console.error("PDF Export Critical Error: ", err);
-    alert("导出遇到严重异常，请检查浏览器设置或刷新后重试！");
+    console.error("PDF Export Error: ", err);
+    alert("导出失败，请重试！");
   }
 }
 
@@ -233,63 +201,6 @@ function ConfirmDialog({ message, onConfirm, onCancel }: { message: string; onCo
           </button>
         </div>
       </div>
-    </div>
-  );
-}
-
-// ─── PhotoUploader ────────────────────────────────────────────────────────────
-
-function PhotoUploader({ photos, onChange }: { photos: { url: string; caption: string }[]; onChange: (p: { url: string; caption: string }[]) => void }) {
-  const inputRef = useRef<HTMLInputElement>(null);
-  const [lightbox, setLightbox] = useState<string | null>(null);
-
-  const handleFiles = useCallback((files: FileList | null) => {
-    if (!files) return;
-    const added = Array.from(files).map((f) => ({ url: URL.createObjectURL(f), caption: "" }));
-    onChange([...photos, ...added]);
-  }, [photos, onChange]);
-
-  const handleDrop = useCallback((e: React.DragEvent) => { e.preventDefault(); handleFiles(e.dataTransfer.files); }, [handleFiles]);
-
-  return (
-    <div className="space-y-3">
-      <div onDrop={handleDrop} onDragOver={(e) => e.preventDefault()} onClick={() => inputRef.current?.click()}
-        className="border border-dashed border-border rounded p-5 flex flex-col items-center gap-2 cursor-pointer hover:border-primary/50 hover:bg-primary/5 transition-all">
-        <ImagePlus size={18} className="text-muted-foreground" />
-        <p className="text-xs text-muted-foreground text-center" style={{ fontFamily: "'DM Mono', monospace" }}>
-          拖拽或点击上传照片
-          <span className="block text-[10px] mt-0.5 opacity-60">Drop or click · JPG, PNG, HEIC</span>
-        </p>
-        <input ref={inputRef} type="file" accept="image/*" multiple className="hidden" onChange={(e) => handleFiles(e.target.files)} />
-      </div>
-      {photos.length > 0 && (
-        <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
-          {photos.map((photo, i) => (
-            <div key={photo.url + i} className="group relative">
-              <div className="aspect-[4/3] rounded overflow-hidden bg-muted cursor-zoom-in" onClick={() => setLightbox(photo.url)}>
-                <img src={photo.url} alt={photo.caption || `照片 ${i + 1}`} className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300" />
-              </div>
-              <button type="button" onClick={() => { URL.revokeObjectURL(photo.url); onChange(photos.filter((_, j) => j !== i)); }}
-                className="absolute top-1.5 right-1.5 w-5 h-5 rounded-full bg-black/60 text-white flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity hover:bg-black/80">
-                <X size={10} />
-              </button>
-              <div className="mt-1.5 flex items-center gap-1">
-                <Pencil size={9} className="text-muted-foreground shrink-0" />
-                <input type="text" value={photo.caption}
-                  onChange={(e) => onChange(photos.map((p, j) => j === i ? { ...p, caption: e.target.value } : p))}
-                  placeholder="添加说明..."
-                  className="flex-1 text-[11px] bg-transparent border-b border-border/50 focus:border-primary/50 focus:outline-none py-0.5 text-foreground placeholder:text-muted-foreground" />
-              </div>
-            </div>
-          ))}
-        </div>
-      )}
-      {lightbox && (
-        <div className="fixed inset-0 z-[60] bg-black/90 flex items-center justify-center p-4" onClick={() => setLightbox(null)}>
-          <img src={lightbox} alt="preview" className="max-w-full max-h-full object-contain rounded" onClick={(e) => e.stopPropagation()} />
-          <button type="button" onClick={() => setLightbox(null)} className="absolute top-4 right-4 text-white/70 hover:text-white"><X size={20} /></button>
-        </div>
-      )}
     </div>
   );
 }
@@ -394,26 +305,9 @@ function LogCard({ entry, onSelect, onEdit, onDelete }: {
           </div>
           <ChevronRight size={14} className="text-muted-foreground shrink-0 mt-1 group-hover:text-primary transition-colors" />
         </div>
-        {entry.photos && entry.photos.length > 0 && (
-          <div className="flex gap-1.5 mt-3 overflow-hidden">
-            {entry.photos.slice(0, 4).map((p, i) => (
-              <div key={i} className="w-11 h-11 rounded overflow-hidden bg-muted shrink-0">
-                <img src={p.url} alt={p.caption || `photo ${i + 1}`} className="w-full h-full object-cover" />
-              </div>
-            ))}
-            {entry.photos.length > 4 && (
-              <div className="w-11 h-11 rounded bg-muted flex items-center justify-center shrink-0">
-                <span className="text-[10px] text-muted-foreground" style={{ fontFamily: "'DM Mono', monospace" }}>+{entry.photos.length - 4}</span>
-              </div>
-            )}
-          </div>
-        )}
         <div className="flex items-center gap-2 mt-3">
           <span className="text-[10px] bg-secondary text-secondary-foreground px-2 py-0.5 rounded" style={{ fontFamily: "'DM Mono', monospace" }}>{(entry.location || "未定义方位").split(" ")[0]}</span>
           {entry.subjectName && <span className="text-[10px] text-muted-foreground" style={{ fontFamily: "'DM Mono', monospace" }}>{entry.subjectName} · {entry.subjectRole}</span>}
-          {entry.photos && entry.photos.length > 0 && (
-            <span className="flex items-center gap-0.5 text-[10px] text-muted-foreground ml-auto" style={{ fontFamily: "'DM Mono', monospace" }}><Camera size={9} />{entry.photos.length}</span>
-          )}
         </div>
       </button>
       <div className="border-t border-border/50 px-4 py-2 flex items-center gap-1">
@@ -516,22 +410,6 @@ function EntryDetail({ entry, onClose, onEdit, onDelete }: {
                 <h1 className="text-xl font-bold text-gray-900" style={{ fontFamily: "'Lora', serif" }}>{entry.species || entry.ecologicalProcess || entry.habitat || "Observation"}</h1>
                 <p className="text-[11px] text-muted-foreground mt-0.5" style={{ fontFamily: "'DM Mono', monospace" }}>{entry.id} · {formatDate(entry.date)} {entry.time}</p>
               </div>
-
-              {entry.photos && entry.photos.length > 0 && (
-                <div className="mb-5 pb-5 border-b border-border">
-                  <p className="text-[10px] tracking-widest uppercase text-muted-foreground mb-3" style={{ fontFamily: "'DM Mono', monospace" }}>现场照片 · Field Photos ({entry.photos.length})</p>
-                  <div className="grid grid-cols-3 gap-2">
-                    {entry.photos.map((p, i) => (
-                      <div key={i} className="space-y-1">
-                        <div className="aspect-[4/3] rounded overflow-hidden bg-muted">
-                          <img src={p.url} alt={p.caption || `photo ${i + 1}`} className="w-full h-full object-cover" />
-                        </div>
-                        {p.caption && <p className="text-[10px] text-muted-foreground leading-snug">{p.caption}</p>}
-                      </div>
-                    ))}
-                  </div>
-                </div>
-              )}
 
               {rows.map((row, i) =>
                 row.value ? (
@@ -684,9 +562,6 @@ function ObservationForm({ initial, editingId, onSave, onCancel }: {
               <Field label="信号描述 Description" required sublabel="Describe what was seen, heard, or measured — be concrete">
                 <TextArea value={form.signalDescription} onChange={(v) => set("signalDescription", v)} placeholder="约30只白鹭聚集取食，数量显著高于往常基线…" rows={4} />
               </Field>
-              <Field label="现场照片 Field Photos" sublabel="Upload photos as evidence — add a caption to each">
-                <PhotoUploader photos={form.photos || []} onChange={(v) => set("photos", v)} />
-              </Field>
             </div>
           </div>
           <SectionDivider />
@@ -834,7 +709,7 @@ function ObservationForm({ initial, editingId, onSave, onCancel }: {
 export default function App() {
   const [view, setView] = useState<"form" | "log">("log");
 
-  // LocalStorage 本地数据库挂载
+  // LocalStorage 本地持久化存储
   const [entries, setEntries] = useState<ObservationEntry[]>(() => {
     const saved = localStorage.getItem("eco_observation_logs");
     return saved ? JSON.parse(saved) : SEED_ENTRIES;
