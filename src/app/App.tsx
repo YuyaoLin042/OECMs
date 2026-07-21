@@ -5,8 +5,6 @@ import {
   FlaskConical, Radio, Footprints, HelpCircle, Telescope,
   Trash2, Edit2, Download, ArrowLeft,
 } from "lucide-react";
-import jsPDF from "jspdf";
-import html2canvas from "html2canvas";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -131,65 +129,11 @@ function formatDate(iso: string) {
   return new Date(iso).toLocaleDateString("zh-CN", { year: "numeric", month: "long", day: "numeric" });
 }
 
-// ─── Pure Text PDF Export ─────────────────────────────────────────────────────
-
-async function exportPDF(el: HTMLElement, filename: string) {
-  try {
-    const canvas = await html2canvas(el, {
-      scale: 2,
-      useCORS: true,
-      backgroundColor: "#ffffff",
-      logging: false,
-    });
-
-    const imgData = canvas.toDataURL("image/png");
-    const pdf = new jsPDF({ unit: "mm", format: "a4", orientation: "portrait" });
-    const pageW = pdf.internal.pageSize.getWidth();
-    const pageH = pdf.internal.pageSize.getHeight();
-    const imgW = pageW - 20;
-    const imgH = (canvas.height * imgW) / canvas.width;
-
-    let remainingH = imgH;
-    let srcY = 0;
-
-    if (imgH <= pageH - 20) {
-      pdf.addImage(imgData, "PNG", 10, 10, imgW, imgH);
-    } else {
-      while (remainingH > 0) {
-        const sliceHeightInPdf = Math.min(remainingH, pageH - 20);
-        const sliceHeightInCanvas = (sliceHeightInPdf * canvas.width) / imgW;
-
-        const sliceCanvas = document.createElement("canvas");
-        sliceCanvas.width = canvas.width;
-        sliceCanvas.height = sliceHeightInCanvas;
-        const ctx = sliceCanvas.getContext("2d");
-
-        if (ctx) {
-          ctx.drawImage(canvas, 0, srcY, canvas.width, sliceHeightInCanvas, 0, 0, canvas.width, sliceHeightInCanvas);
-          pdf.addImage(sliceCanvas.toDataURL("image/png"), "PNG", 10, 10, imgW, sliceHeightInPdf);
-        }
-
-        srcY += sliceHeightInCanvas;
-        remainingH -= sliceHeightInPdf;
-
-        if (remainingH > 0) {
-          pdf.addPage();
-        }
-      }
-    }
-
-    pdf.save(filename);
-  } catch (err) {
-    console.error("PDF Export Error: ", err);
-    alert("导出失败，请重试！");
-  }
-}
-
 // ─── Confirm Dialog ───────────────────────────────────────────────────────────
 
 function ConfirmDialog({ message, onConfirm, onCancel }: { message: string; onConfirm: () => void; onCancel: () => void }) {
   return (
-    <div className="fixed inset-0 z-[70] bg-black/40 flex items-center justify-center p-4">
+    <div className="fixed inset-0 z-[70] bg-black/40 flex items-center justify-center p-4 no-print">
       <div className="bg-card border border-border rounded p-6 max-w-sm w-full shadow-xl">
         <p className="text-sm text-foreground mb-5 leading-relaxed">{message}</p>
         <div className="flex gap-2 justify-end">
@@ -326,7 +270,7 @@ function LogCard({ entry, onSelect, onEdit, onDelete }: {
   );
 }
 
-// ─── Entry Detail Modal ───────────────────────────────────────────────────────
+// ─── Entry Detail Modal (Supports Native Browser Print to PDF) ───────────────
 
 function EntryDetail({ entry, onClose, onEdit, onDelete }: {
   entry: ObservationEntry;
@@ -334,18 +278,11 @@ function EntryDetail({ entry, onClose, onEdit, onDelete }: {
   onEdit: (e: ObservationEntry) => void;
   onDelete: (id: string) => void;
 }) {
-  const contentRef = useRef<HTMLDivElement>(null);
-  const [exporting, setExporting] = useState(false);
   const [confirmDelete, setConfirmDelete] = useState(false);
 
-  async function handleDownload() {
-    if (!contentRef.current) return;
-    setExporting(true);
-    try {
-      await exportPDF(contentRef.current, `${entry.id}.pdf`);
-    } finally {
-      setExporting(false);
-    }
+  // 原生系统打印导出函数（矢量清晰、零报错）
+  function handleDownload() {
+    window.print();
   }
 
   const rows: { label: string; en: string; value: string }[] = [
@@ -369,8 +306,8 @@ function EntryDetail({ entry, onClose, onEdit, onDelete }: {
     <>
       <div className="fixed inset-0 bg-black/40 backdrop-blur-sm z-50 flex items-center justify-center p-4">
         <div className="bg-card border border-border rounded w-full max-w-2xl max-h-[90vh] flex flex-col shadow-xl">
-          {/* Header */}
-          <div className="shrink-0 bg-card border-b border-border px-5 py-3.5 flex items-center justify-between gap-3">
+          {/* 弹窗顶部按钮操作栏（打印时通过 no-print 隐藏） */}
+          <div className="shrink-0 bg-card border-b border-border px-5 py-3.5 flex items-center justify-between gap-3 no-print">
             <div className="min-w-0">
               <p className="text-[10px] text-muted-foreground tracking-widest" style={{ fontFamily: "'DM Mono', monospace" }}>{entry.id}</p>
               <h2 className="text-base truncate" style={{ fontFamily: "'Lora', serif" }}>{entry.species || entry.ecologicalProcess || "Observation Record"}</h2>
@@ -381,10 +318,10 @@ function EntryDetail({ entry, onClose, onEdit, onDelete }: {
                 style={{ fontFamily: "'DM Mono', monospace" }}>
                 <Edit2 size={11} /> 编辑
               </button>
-              <button onClick={handleDownload} disabled={exporting}
-                className="flex items-center gap-1.5 text-xs text-emerald-800 bg-emerald-50 hover:bg-emerald-100 border border-emerald-200 px-2.5 py-1.5 rounded transition-all disabled:opacity-50 font-medium"
+              <button onClick={handleDownload}
+                className="flex items-center gap-1.5 text-xs text-emerald-800 bg-emerald-50 hover:bg-emerald-100 border border-emerald-200 px-2.5 py-1.5 rounded transition-all font-medium"
                 style={{ fontFamily: "'DM Mono', monospace" }}>
-                <Download size={11} /> {exporting ? "导出中…" : "导出 PDF"}
+                <Download size={11} /> 导出 PDF
               </button>
               <button onClick={() => setConfirmDelete(true)}
                 className="flex items-center gap-1.5 text-xs text-muted-foreground hover:text-destructive border border-border hover:border-destructive/40 px-2.5 py-1.5 rounded transition-all"
@@ -397,9 +334,9 @@ function EntryDetail({ entry, onClose, onEdit, onDelete }: {
             </div>
           </div>
 
-          {/* Body */}
+          {/* 准备导出 PDF 的正文区域 */}
           <div className="overflow-y-auto flex-1 p-6">
-            <div ref={contentRef} className="bg-white p-6 rounded border border-gray-100 shadow-sm" style={{ fontFamily: "'DM Sans', sans-serif" }}>
+            <div id="printable-record-content" className="bg-white p-6 rounded border border-gray-100 shadow-sm" style={{ fontFamily: "'DM Sans', sans-serif" }}>
               <div className="mb-5 pb-4 border-b border-border">
                 <div className="flex items-center gap-2 mb-1">
                   <div className="w-5 h-5 rounded-sm bg-primary flex items-center justify-center">
@@ -679,7 +616,7 @@ function ObservationForm({ initial, editingId, onSave, onCancel }: {
             </div>
           </div>
 
-          <div className="mt-10 pt-6 border-t border-border flex items-center justify-between">
+          <div className="mt-10 pt-6 border-t border-border flex items-center justify-between no-print">
             <p className="text-xs text-muted-foreground"><span className="text-accent">*</span> Required fields</p>
             <div className="flex items-center gap-2">
               {editingId && (
@@ -754,7 +691,7 @@ export default function App() {
 
   return (
     <div className="min-h-screen bg-background text-foreground" style={{ fontFamily: "'DM Sans', sans-serif" }}>
-      <header className="sticky top-0 z-40 bg-background/95 backdrop-blur-sm border-b border-border">
+      <header className="sticky top-0 z-40 bg-background/95 backdrop-blur-sm border-b border-border no-print">
         <div className="max-w-6xl mx-auto px-4 sm:px-6 h-14 flex items-center justify-between">
           <div className="flex items-center gap-3">
             <div className="w-7 h-7 rounded-sm bg-primary flex items-center justify-center shrink-0">
@@ -783,7 +720,7 @@ export default function App() {
 
       {view === "log" && (
         <div className="max-w-6xl mx-auto px-4 sm:px-6 py-8">
-          <div className="flex items-end justify-between mb-6">
+          <div className="flex items-end justify-between mb-6 no-print">
             <div>
               <h1 className="text-2xl mb-1" style={{ fontFamily: "'Lora', serif" }}>观察记录存档</h1>
               <p className="text-sm text-muted-foreground">{entries.length} 条记录 · 按日期降序</p>
